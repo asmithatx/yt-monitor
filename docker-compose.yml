@@ -1,0 +1,76 @@
+# ── yt-monitor Docker Compose ──────────────────────────────────────────────
+#
+# Usage:
+#   cp .env.example .env        # fill in your API keys
+#   docker compose up -d        # start in background
+#   docker compose logs -f      # tail logs
+#   docker compose down         # stop
+#
+# Data is persisted in Docker named volumes so it survives container
+# restarts and image rebuilds.
+#
+# To run the Flask dashboard alongside the monitor, uncomment the
+# 'dashboard' service at the bottom of this file.
+# ────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Main monitor ──────────────────────────────────────────
+  monitor:
+    build: .
+    container_name: yt-monitor
+    restart: unless-stopped
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    env_file:
+      - .env
+    volumes:
+      # Persistent SQLite database — survives container rebuilds
+      - yt_data:/app/data
+      # Log files (optional — logs also go to stdout via Docker)
+      - yt_logs:/app/logs
+    # Resource limits — conservative values safe for a Raspberry Pi 4
+    # Increase on more powerful hardware if needed
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+    # Logging: keep 5 files × 10MB each — prevents disk fill on long runs
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+
+  # ── Flask Dashboard (DISABLED by default) ─────────────────
+  # Uncomment this entire block when ready to use the dashboard.
+  # Also set OUTPUT_BACKEND=dashboard in config.py (or .env).
+  #
+  # dashboard:
+  #   build: .
+  #   container_name: yt-dashboard
+  #   restart: unless-stopped
+  #   command: python dashboard/app.py
+  #   env_file:
+  #     - .env
+  #   ports:
+  #     - "5000:5000"    # Access at http://localhost:5000
+  #   volumes:
+  #     - yt_data:/app/data   # Shares the same DB as the monitor
+  #   depends_on:
+  #     - monitor
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 256M
+  #         cpus: "0.5"
+
+
+volumes:
+  yt_data:
+    driver: local
+  yt_logs:
+    driver: local

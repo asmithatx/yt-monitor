@@ -1,0 +1,17 @@
+# ── Core pipeline ─────────────────────────────────────────
+feedparser==6.0.11
+youtube-transcript-api>=1.2.4,<2.0
+anthropic>=0.49.0
+
+# ── Output backends ───────────────────────────────────────
+requests>=2.32.0
+flask>=3.1.0
+
+# ── Environment / config ──────────────────────────────────
+python-dotenv>=1.0.0
+
+# ── Optional: Whisper Tier-2 transcription ────────────────
+# Uncomment these when WHISPER_ENABLED=True
+# yt-dlp>=2024.12.0
+# openai>=1.50.0          # For WHISPER_BACKEND="api"
+# openai-whisper>=20240927  # For WHISPER_BACKEND="local" (also needs ffmpeg)

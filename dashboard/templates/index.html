@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>yt-monitor Dashboard</title>
+    <style>
+        body { font-family: sans-serif; max-width: 960px; margin: 0 auto; padding: 1rem; background: #f5f5f5; }
+        h1 { color: #333; }
+        .card { background: white; border-radius: 8px; padding: 1rem 1.5rem; margin-bottom: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+        .card h2 a { color: #1a73e8; text-decoration: none; }
+        .meta { font-size: 0.8rem; color: #666; margin-bottom: 0.5rem; }
+        .summary { font-size: 0.9rem; white-space: pre-wrap; }
+        .tier-1 { border-left: 4px solid #34a853; }
+        .tier-2 { border-left: 4px solid #fbbc04; }
+        .tier-3 { border-left: 4px solid #ea4335; }
+        .empty { text-align: center; color: #999; padding: 3rem; }
+    </style>
+</head>
+<body>
+    <h1>📺 yt-monitor</h1>
+    {% if videos %}
+        {% for video in videos %}
+        <div class="card tier-{{ video['transcript_tier'] or 3 }}">
+            <div class="meta">
+                <strong>{{ video['channel_name'] }}</strong> &mdash;
+                {{ (video['published_at'] or '')[:10] }}
+            </div>
+            <h2><a href="/video/{{ video['video_id'] }}" target="_blank">{{ video['title'] }}</a></h2>
+            <div class="summary">{{ (video['summary_text'] or '')[:300] }}{% if video['summary_text'] and video['summary_text']|length > 300 %}…{% endif %}</div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty">No summaries yet. The monitor will populate this as new videos are found.</div>
+    {% endif %}
+</body>
+</html>
