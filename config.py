@@ -31,7 +31,12 @@ YOUTUBE_API_ENABLED: bool = False
 # Set True to route youtube-transcript-api requests through a residential
 # proxy. Recommended when running on cloud/VPS IPs. Requires PROXY_USERNAME
 # and PROXY_PASSWORD in .env. Has no effect when False.
-PROXY_ENABLED: bool = False
+PROXY_ENABLED: bool = True
+
+WEBSHARE_DOWNLOAD_URL = (
+    "https://proxy.webshare.io/api/v2/proxy/list/download/"
+    "rcsmiqesnyquitafnvvifcwhvhblzeoxtnjkpnfv/-/any/username/direct/-/?plan_id=12819807"
+)
 
 # Set True to use Anthropic's Message Batches API instead of real-time
 # calls. Gives a 50% cost discount; results arrive within 24 hours.
@@ -60,7 +65,20 @@ CHANNELS: dict[str, str] = {
     # "UCxxxxxxxxxxxxxxxxxxxxxxxx": "Friendly Channel Name",
     # Example (replace with real channels):
     # "UCBcRF18a7Qf58cCRy5xuWwQ": "Michael Reeves",
-    "UCv9ztg_Qfj6_kmtWoFWyHYw": "Andrew Smith's YT channel (for testing)",
+    # "UCv9ztg_Qfj6_kmtWoFWyHYw": "@oleJackBurton (Andrew Smith's YT channel for testing)",
+    "UCFsDMlkYLpTVt9-cqmZxqZg": "https://www.youtube.com/@WillNeff",
+    "UCtMVHI3AJD4Qk4hcbZnI9ZQ": "https://www.youtube.com/@SomeOrdinaryGamers",
+    "UCAM2fyCjEdROyELretVTiiw": "https://www.youtube.com/@HopeScope",
+    "UC11PvrGPzo6Y7Zc6-e9cAKg": "https://www.youtube.com/@DramaAlert",
+    "UCidqz0TKGCpdBO7VcLNEhKA": "https://www.youtube.com/@JuiceboxTV",
+    "UCWaZLW7Bfa83J_h587dH1WQ": "https://www.youtube.com/@TrueGeordie",
+    "UCvYrhzKs1c8LajTP687ifEA": "https://www.youtube.com/@FlagrantPodcast",
+    "Ucz_sgiKcwX6V52KPn_B6PxQ": "https://www.youtube.com/@BertKreischer",
+    "UCYIgiXwJck_Pb5Nj-wIrsqg": "https://www.youtube.com/@YMHStudios",
+    "UCfPhyExfcaqJBKc3HO3cNBw": "https://www.youtube.com/@JustKiddingNews",
+    "UCcksY7M9z-G8ek6eblXMxdw": "https://www.youtube.com/@NoelMiller",
+    "UC7bouvhSTd2RQwYOi7zq0hQ": "https://www.youtube.com/@StavvyBaby",
+    "UCzQUP1qoWDoEbmsQxvdjxgQ": "https://www.youtube.com/@joerogan",
 }
 
 

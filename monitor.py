@@ -21,7 +21,7 @@ import time
 import config
 import database
 import channels as channel_module
-import transcripts
+from transcripts import init_proxies
 import summarizer
 from output import get_backend
 import seeder
@@ -199,7 +199,10 @@ def main() -> None:
     # Initialise DB schema
     database.migrate()
 
-    # Initialise and validate the output backend
+    # Initialize proxy list (no-op if PROXY_ENABLED = False)
+    init_proxies()
+
+    # Initialize and validate the output backend
     backend = get_backend()
     _validate_startup(backend)
     logger.info("Startup validation passed")
