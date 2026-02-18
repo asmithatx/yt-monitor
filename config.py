@@ -33,9 +33,8 @@ YOUTUBE_API_ENABLED: bool = False
 # and PROXY_PASSWORD in .env. Has no effect when False.
 PROXY_ENABLED: bool = True
 
-WEBSHARE_DOWNLOAD_URL = (
-    "https://proxy.webshare.io/api/v2/proxy/list/download/odbdymjebxixtxeoamqgdafxxespfhdtbujtijku/-/any/username/direct/-/?plan_id=12819807"
-)
+PROXY_USERNAME = os.getenv("PROXY_USERNAME", "")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD", "")
 
 # Set True to use Anthropic's Message Batches API instead of real-time
 # calls. Gives a 50% cost discount; results arrive within 24 hours.

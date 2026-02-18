@@ -118,6 +118,32 @@ def _pick_proxy(attempted: set[str]) -> dict | None:
 #  Tier 1 — youtube-transcript-api
 # ────────────────────────────────────────────────────────────
 
+from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled, VideoUnavailable
+from youtube_transcript_api.proxies import WebshareProxyConfig
+
+def init_proxies() -> None:
+    """No-op — WebshareProxyConfig handles rotation internally."""
+    if config.PROXY_ENABLED:
+        if not config.PROXY_USERNAME or not config.PROXY_PASSWORD:
+            logger.error("PROXY_ENABLED=True but PROXY_USERNAME or PROXY_PASSWORD is not set in .env.")
+        else:
+            logger.info("Proxy support enabled via WebshareProxyConfig.")
+    else:
+        logger.info("Proxy support is disabled.")
+
+
+def _make_api() -> YouTubeTranscriptApi:
+    """Instantiate the API client, with or without proxy."""
+    if config.PROXY_ENABLED and config.PROXY_USERNAME and config.PROXY_PASSWORD:
+        return YouTubeTranscriptApi(
+            proxy_config=WebshareProxyConfig(
+                proxy_username=config.PROXY_USERNAME,
+                proxy_password=config.PROXY_PASSWORD,
+            )
+        )
+    return YouTubeTranscriptApi()
+
+
 def _fetch_via_api(
     video_id: str,
     languages: list[str],
@@ -125,19 +151,14 @@ def _fetch_via_api(
     backoff_base: float,
 ) -> list[dict] | None:
     last_exception = None
-    attempted_proxies: set[str] = set()
 
     for attempt in range(max_retries):
-        proxy_dict = _pick_proxy(attempted_proxies)
-
         try:
-            ytt = YouTubeTranscriptApi(proxies=proxy_dict)  # new: instantiate with proxies
-            fetched = ytt.fetch(video_id, languages=languages)  # new: instance method
-            segments = fetched.to_raw_data()  # convert FetchedTranscript → list[dict]
-
+            ytt = _make_api()
+            fetched = ytt.fetch(video_id, languages=languages)
             if attempt > 0:
                 logger.info("[%s] Transcript fetched successfully on attempt %d.", video_id, attempt + 1)
-            return segments
+            return fetched.to_raw_data()
 
         except (TranscriptsDisabled, NoTranscriptFound):
             logger.warning("[%s] No transcript available (disabled or not found).", video_id)

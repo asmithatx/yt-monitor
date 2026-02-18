@@ -76,6 +76,9 @@ def _validate_startup(backend) -> None:
             "YOUTUBE_API_ENABLED=True but YOUTUBE_API_KEY is not set in .env."
         )
 
+    if config.PROXY_ENABLED and (not config.PROXY_USERNAME or not config.PROXY_PASSWORD):
+        errors.append("PROXY_ENABLED=True but PROXY_USERNAME or PROXY_PASSWORD is not set in .env.")
+
     if errors:
         for err in errors:
             logger.error("Config error: %s", err)
