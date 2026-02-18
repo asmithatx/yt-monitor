@@ -80,10 +80,20 @@ def _load_proxies() -> list[str]:
 def init_proxies() -> None:
     """Call once at app startup to pre-load the proxy list (no-op if PROXY_ENABLED=False)."""
     global _proxy_list
-    if config.PROXY_ENABLED:
-        _proxy_list = _load_proxies()
-    else:
+    if not config.PROXY_ENABLED:
         logger.info("Proxy support is disabled — skipping proxy load.")
+        return
+
+    try:
+        _proxy_list = _load_proxies()
+    except Exception as exc:
+        logger.error(
+            "Failed to load proxy list from Webshare: %s — "
+            "transcript requests will proceed WITHOUT a proxy until the next successful load. "
+            "Check your WEBSHARE_DOWNLOAD_URL in config.py.",
+            exc,
+        )
+        _proxy_list = []  # fall back to direct requests rather than crashing
 
 
 def _pick_proxy(attempted: set[str]) -> dict | None:
