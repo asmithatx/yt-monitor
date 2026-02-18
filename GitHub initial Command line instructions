@@ -33,7 +33,40 @@ git push -u origin main
 --------------------------------------------------------------------------------------
 git remote add origin git@github.com:asmithatx/yt-monitor.git
 git branch -M main
+
+
+
+
 git push -u origin main
 --------------------------------------------------------------------------------------
+
+
+
+
+
+
+steps actually taken
+--------------------------------------------------------------------------------------
+git init --initial-branch=main --object-format=sha1
+git remote add origin git@github.com:asmithatx/yt-monitor.git
+git config --local user.name "Andrew Smith"
+git config --local user.email "andrew@andrewsmithtesting.cloud"
+git add .
+git commit -m "Initial commit"
+git push -u origin main
+
+
+
+
+--------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
 
 
