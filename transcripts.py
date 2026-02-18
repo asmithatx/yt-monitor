@@ -10,6 +10,7 @@ along with the tier number so the summarizer can adjust its prompt.
 Proxy support (residential IP rotation via Webshare) is built in and
 activated by setting PROXY_ENABLED = True in config.py.
 """
+from __future__ import annotations
 
 import logging
 import random
@@ -144,12 +145,14 @@ def _make_api() -> YouTubeTranscriptApi:
     return YouTubeTranscriptApi()
 
 
-def _fetch_via_api(
+def get_transcript(
     video_id: str,
-    languages: list[str],
-    max_retries: int,
-    backoff_base: float,
-) -> list[dict] | None:
+    title: str = "",
+    description: str = "",
+    languages: list[str] = ["en"],
+    max_retries: int = 5,
+    backoff_base: float = 4.0,  # was 2.0 — doubles each wait time
+) -> TranscriptResult:
     last_exception = None
 
     for attempt in range(max_retries):

@@ -166,7 +166,7 @@ def run_seed(backend) -> None:
                 )
 
             # Small courtesy delay between API calls
-            time.sleep(1)
+            time.sleep(10)
 
     logger.info(
         "Seeder: complete — %d video(s) seeded, %d skipped (card already on Trello)",
