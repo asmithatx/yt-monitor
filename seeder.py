@@ -180,24 +180,25 @@ def _process_seed_entry(entry: dict, channel_name: str, backend) -> None:
     video_id = entry["video_id"]
 
     # 1. Transcript (3-tier fallback — same as normal poll pipeline)
-    transcript_data = transcripts.get_transcript(video_id, entry["title"])
+    # Returns a TranscriptResult dataclass, not a dict
+    transcript = transcripts.get_transcript(video_id, entry["title"])
 
-    # 2. Summarize
-    summary = summarizer.summarize(
+    # 2. Summarize — kwarg is `transcript`, value is the TranscriptResult object
+    summary_result = summarizer.summarize(
         video_id=video_id,
         title=entry["title"],
         channel_name=channel_name,
-        transcript_data=transcript_data,
+        transcript=transcript,
     )
 
-    # 3. Publish to output backend
+    # 3. Publish to output backend — .tier is an int attribute, .text via summary_result
     backend.publish(
         video_id=video_id,
         title=entry["title"],
         channel_name=channel_name,
         url=entry["url"],
-        summary=summary,
-        transcript_tier=transcript_data.get("tier", "unknown"),
+        summary=summary_result.text,
+        transcript_tier=transcript.tier,
     )
 
     # 4. Record in local DB so the polling loop never re-processes it
@@ -207,6 +208,6 @@ def _process_seed_entry(entry: dict, channel_name: str, backend) -> None:
         channel_name=channel_name,
         title=entry["title"],
         url=entry["url"],
-        summary=summary,
-        transcript_tier=int(transcript_data.get("tier", 3)),
+        summary=summary_result.text,
+        transcript_tier=transcript.tier,
     )
