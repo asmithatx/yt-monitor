@@ -17,13 +17,13 @@ import random
 import time
 from dataclasses import dataclass
 
-import requests
 from youtube_transcript_api import (
     NoTranscriptFound,
     TranscriptsDisabled,
     VideoUnavailable,
     YouTubeTranscriptApi,
 )
+from youtube_transcript_api.proxies import WebshareProxyConfig
 
 import config
 
@@ -51,82 +51,13 @@ class TranscriptResult:
 #  Proxy management
 # ────────────────────────────────────────────────────────────
 
-_proxy_list: list[str] = []
-
-
-def _load_proxies() -> list[str]:
-    """Download the current proxy list from Webshare and return as proxy URLs."""
-    logger.info("Loading proxy list from Webshare...")
-    response = requests.get(config.WEBSHARE_DOWNLOAD_URL, timeout=10)
-    response.raise_for_status()
-
-    proxies = []
-    for line in response.text.strip().splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        # Each line format: ip:port:username:password
-        parts = line.split(":")
-        if len(parts) == 4:
-            ip, port, username, password = parts
-            proxies.append(f"http://{username}:{password}@{ip}:{port}")
-
-    if not proxies:
-        raise ValueError("No proxies returned from Webshare — check your download URL.")
-
-    logger.info("Loaded %d proxies from Webshare.", len(proxies))
-    return proxies
-
-
 def init_proxies() -> None:
-    """Call once at app startup to pre-load the proxy list (no-op if PROXY_ENABLED=False)."""
-    global _proxy_list
-    if not config.PROXY_ENABLED:
-        logger.info("Proxy support is disabled — skipping proxy load.")
-        return
-
-    try:
-        _proxy_list = _load_proxies()
-    except Exception as exc:
-        logger.error(
-            "Failed to load proxy list from Webshare: %s — "
-            "transcript requests will proceed WITHOUT a proxy until the next successful load. "
-            "Check your WEBSHARE_DOWNLOAD_URL in config.py.",
-            exc,
-        )
-        _proxy_list = []  # fall back to direct requests rather than crashing
-
-
-def _pick_proxy(attempted: set[str]) -> dict | None:
-    """
-    Pick a proxy from the loaded list, avoiding already-attempted ones.
-    Returns None if proxies are disabled or the list is empty.
-    """
-    if not config.PROXY_ENABLED or not _proxy_list:
-        return None
-
-    available = [p for p in _proxy_list if p not in attempted]
-    if not available:
-        attempted.clear()  # exhausted the list — start over
-        available = _proxy_list
-
-    proxy_url = random.choice(available)
-    attempted.add(proxy_url)
-    return {"http": proxy_url, "https": proxy_url}
-
-
-# ────────────────────────────────────────────────────────────
-#  Tier 1 — youtube-transcript-api
-# ────────────────────────────────────────────────────────────
-
-from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled, VideoUnavailable
-from youtube_transcript_api.proxies import WebshareProxyConfig
-
-def init_proxies() -> None:
-    """No-op — WebshareProxyConfig handles rotation internally."""
+    """Validate proxy config at startup. WebshareProxyConfig handles rotation internally."""
     if config.PROXY_ENABLED:
         if not config.PROXY_USERNAME or not config.PROXY_PASSWORD:
-            logger.error("PROXY_ENABLED=True but PROXY_USERNAME or PROXY_PASSWORD is not set in .env.")
+            logger.error(
+                "PROXY_ENABLED=True but PROXY_USERNAME or PROXY_PASSWORD is not set in .env."
+            )
         else:
             logger.info("Proxy support enabled via WebshareProxyConfig.")
     else:
@@ -134,7 +65,7 @@ def init_proxies() -> None:
 
 
 def _make_api() -> YouTubeTranscriptApi:
-    """Instantiate the API client, with or without proxy."""
+    """Instantiate the API client, with or without Webshare proxy."""
     if config.PROXY_ENABLED and config.PROXY_USERNAME and config.PROXY_PASSWORD:
         return YouTubeTranscriptApi(
             proxy_config=WebshareProxyConfig(
@@ -145,14 +76,20 @@ def _make_api() -> YouTubeTranscriptApi:
     return YouTubeTranscriptApi()
 
 
-def get_transcript(
+# ────────────────────────────────────────────────────────────
+#  Tier 1 — youtube-transcript-api
+# ────────────────────────────────────────────────────────────
+
+def _fetch_via_api(
     video_id: str,
-    title: str = "",
-    description: str = "",
-    languages: list[str] = ["en"],
-    max_retries: int = 5,
-    backoff_base: float = 4.0,  # was 2.0 — doubles each wait time
-) -> TranscriptResult:
+    languages: list[str],
+    max_retries: int,
+    backoff_base: float,
+) -> list[dict] | None:
+    """
+    Attempt to fetch captions via youtube-transcript-api with retries and backoff.
+    Returns raw segment list on success, None on permanent failure.
+    """
     last_exception = None
 
     for attempt in range(max_retries):
@@ -160,16 +97,19 @@ def get_transcript(
             ytt = _make_api()
             fetched = ytt.fetch(video_id, languages=languages)
             if attempt > 0:
-                logger.info("[%s] Transcript fetched successfully on attempt %d.", video_id, attempt + 1)
+                logger.info(
+                    "[%s] Transcript fetched successfully on attempt %d.",
+                    video_id, attempt + 1,
+                )
             return fetched.to_raw_data()
 
         except (TranscriptsDisabled, NoTranscriptFound):
             logger.warning("[%s] No transcript available (disabled or not found).", video_id)
-            return None
+            return None  # permanent — no point retrying
 
         except VideoUnavailable:
             logger.warning("[%s] Video is unavailable.", video_id)
-            return None
+            return None  # permanent
 
         except Exception as exc:
             last_exception = exc
@@ -243,22 +183,14 @@ def get_transcript(
     description: str = "",
     languages: list[str] = ["en"],
     max_retries: int = 5,
-    backoff_base: float = 2.0,
+    backoff_base: float = 4.0,
 ) -> TranscriptResult:
     """
     Extract a transcript using a 3-tier fallback pipeline.
 
-    Tier 1: youtube-transcript-api (with optional proxy rotation)
+    Tier 1: youtube-transcript-api (with optional Webshare proxy rotation)
     Tier 2: Whisper audio transcription (if WHISPER_ENABLED=True)
     Tier 3: Metadata-only fallback (always succeeds)
-
-    Args:
-        video_id:     YouTube video ID
-        title:        Video title (used for Tier 3 fallback)
-        description:  Video description (used for Tier 3 fallback)
-        languages:    Preferred transcript languages in priority order
-        max_retries:  Max Tier 1 attempts before falling through
-        backoff_base: Base seconds for exponential backoff
 
     Returns:
         TranscriptResult with .text and .tier set.
