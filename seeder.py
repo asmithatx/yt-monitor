@@ -5,17 +5,20 @@ On every container start, fetch the 3 most recent RSS entries for every
 configured channel and process any that don't already exist as Trello cards
 anywhere on the board (any list).
 
-This populates initial data so the board has content immediately, and makes
-it easy to demo the project without waiting for new uploads.
-
 Duplicate guard
 ───────────────
-We search every card on the board (not just the target list) for the YouTube
-video ID embedded in the card description.  If a card already references that
-video ID, we skip it — regardless of which list it's in.
+Only the TRELLO board state is used to decide whether to skip a video.
+The local DB is intentionally excluded from this check because a video can
+be recorded in the DB without a corresponding Trello card existing (e.g. from
+a failed previous run, or a card that was subsequently deleted from Trello).
 
-The processed videos are also recorded in the local SQLite database so the
-normal polling loop never re-processes them.
+  Trello card active   → skip   (card already visible on board)
+  Trello card archived → skip   (card exists, just archived)
+  Trello card deleted  → seed   (card gone from API — re-create it) ✓
+  Only in DB, no card  → seed   (DB record doesn't mean card exists) ✓
+
+Videos are still written to the DB after seeding so the normal polling loop
+never re-processes them.
 """
 
 import logging
@@ -77,7 +80,7 @@ def _fetch_recent_entries(channel_id: str, depth: int = SEED_DEPTH) -> list[dict
 def _get_trello_video_ids(backend) -> Set[str]:
     """
     Return the set of YouTube video IDs already present anywhere on the
-    Trello board (across all lists).
+    Trello board (active + archived lists/cards; excludes deleted cards).
 
     Falls back to an empty set if the backend isn't Trello or the call fails,
     so seeding still works — it'll just risk duplicates in edge cases.
@@ -85,25 +88,10 @@ def _get_trello_video_ids(backend) -> Set[str]:
     try:
         return backend.get_existing_video_ids()
     except AttributeError:
-        # Non-Trello backend — no dedup needed at the Trello level
         logger.debug("Seeder: backend has no get_existing_video_ids(); skipping Trello dedup")
         return set()
     except Exception as exc:
         logger.warning("Seeder: could not fetch existing Trello cards — %s", exc)
-        return set()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Database duplicate detection
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _get_db_video_ids() -> Set[str]:
-    """Return the set of video IDs already recorded in the local database."""
-    try:
-        rows = database.get_all_video_ids()
-        return set(rows)
-    except Exception as exc:
-        logger.warning("Seeder: could not query local DB for existing IDs — %s", exc)
         return set()
 
 
@@ -114,8 +102,8 @@ def _get_db_video_ids() -> Set[str]:
 def run_seed(backend) -> None:
     """
     Called once at startup.  For every configured channel, fetch the
-    SEED_DEPTH most recent videos and process any that aren't already
-    represented in Trello or the local database.
+    SEED_DEPTH most recent videos and create a Trello card for any that
+    aren't already on the board (active or archived).
     """
     if not config.CHANNELS:
         logger.info("Seeder: no channels configured — skipping")
@@ -127,9 +115,14 @@ def run_seed(backend) -> None:
         SEED_DEPTH,
     )
 
-    # Build the full "already exists" set once — DB + Trello board
-    existing_ids: Set[str] = _get_db_video_ids() | _get_trello_video_ids(backend)
-    logger.debug("Seeder: %d video ID(s) already known", len(existing_ids))
+    # Duplicate guard is Trello-only: a DB record does not mean a card exists.
+    # (Videos may be in the DB from a previous run where the card was later
+    # deleted, or from a run where card creation failed after DB write.)
+    trello_ids: Set[str] = _get_trello_video_ids(backend)
+    logger.debug("Seeder: %d video ID(s) already on Trello board", len(trello_ids))
+
+    # Track what we process this run to avoid intra-run duplicates
+    seen_this_run: Set[str] = set()
 
     seeded = 0
     skipped = 0
@@ -143,9 +136,11 @@ def run_seed(backend) -> None:
         for entry in entries:
             video_id = entry["video_id"]
 
-            if video_id in existing_ids:
+            if video_id in trello_ids or video_id in seen_this_run:
                 logger.debug(
-                    "Seeder: skipping %s (%s) — already exists", video_id, entry["title"]
+                    "Seeder: skipping %s (%s) — card already exists on Trello",
+                    video_id,
+                    entry["title"],
                 )
                 skipped += 1
                 continue
@@ -159,7 +154,7 @@ def run_seed(backend) -> None:
 
             try:
                 _process_seed_entry(entry, channel_name, backend)
-                existing_ids.add(video_id)   # prevent intra-run duplicates
+                seen_this_run.add(video_id)
                 seeded += 1
             except Exception as exc:
                 logger.error(
@@ -174,7 +169,7 @@ def run_seed(backend) -> None:
             time.sleep(1)
 
     logger.info(
-        "Seeder: complete — %d video(s) seeded, %d skipped (already existed)",
+        "Seeder: complete — %d video(s) seeded, %d skipped (card already on Trello)",
         seeded,
         skipped,
     )
@@ -209,7 +204,7 @@ def _process_seed_entry(entry: dict, channel_name: str, backend) -> None:
     database.mark_video_seen(
         video_id=video_id,
         channel_id=entry["channel_id"],
-        channel_name=channel_name,  # ← add this
+        channel_name=channel_name,
         title=entry["title"],
         url=entry["url"],
         summary=summary,

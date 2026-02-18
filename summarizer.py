@@ -1,228 +1,213 @@
 """
-summarizer.py — Claude API summarization for yt-monitor.
+seeder.py — Startup backfill
+─────────────────────────────────────────────────────────────────────────────
+On every container start, fetch the 3 most recent RSS entries for every
+configured channel and process any that don't already exist as Trello cards
+anywhere on the board (any list).
 
-Features:
-  - Prompt caching via cache_control (saves ~90% on repeated system-prompt tokens)
-  - Tier-aware prompting (adjusts tone for captions vs metadata-only)
-  - Batch API support stub (enabled via BATCH_API_ENABLED in config.py)
-  - Structured output with sections Claude returns consistently
+Duplicate guard
+───────────────
+Only the TRELLO board state is used to decide whether to skip a video.
+The local DB is intentionally excluded from this check because a video can
+be recorded in the DB without a corresponding Trello card existing (e.g. from
+a failed previous run, or a card that was subsequently deleted from Trello).
+
+  Trello card active   → skip   (card already visible on board)
+  Trello card archived → skip   (card exists, just archived)
+  Trello card deleted  → seed   (card gone from API — re-create it) ✓
+  Only in DB, no card  → seed   (DB record doesn't mean card exists) ✓
+
+Videos are still written to the DB after seeding so the normal polling loop
+never re-processes them.
 """
 
 import logging
-from dataclasses import dataclass
-from typing import Optional
+import re
+import time
+from typing import Set
 
-import anthropic
+import feedparser
 
 import config
-from transcripts import TranscriptResult
+import database
+import transcripts
+import summarizer
 
 logger = logging.getLogger(__name__)
 
-# ── Lazy singleton client ────────────────────────────────────────────────────
-_client: Optional[anthropic.Anthropic] = None
+# How many recent videos to seed per channel
+SEED_DEPTH = 3
+
+# Regex to pull a YouTube video ID out of any URL in a Trello card
+_YT_ID_RE = re.compile(
+    r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)"
+    r"([A-Za-z0-9_-]{11})"
+)
 
 
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        if not config.ANTHROPIC_API_KEY:
-            raise ValueError("ANTHROPIC_API_KEY is not set in .env")
-        _client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-    return _client
+# ─────────────────────────────────────────────────────────────────────────────
+#  RSS helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _fetch_recent_entries(channel_id: str, depth: int = SEED_DEPTH) -> list[dict]:
+    """Return up to *depth* most-recent RSS entries for *channel_id*."""
+    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+    try:
+        feed = feedparser.parse(url)
+        entries = feed.entries[:depth]
+        result = []
+        for entry in entries:
+            video_id = entry.get("yt_videoid") or entry.get("id", "").split(":")[-1]
+            if not video_id:
+                continue
+            result.append({
+                "video_id": video_id,
+                "title": entry.get("title", "Untitled"),
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "published": entry.get("published", ""),
+                "channel_id": channel_id,
+            })
+        return result
+    except Exception as exc:
+        logger.warning("Seeder: RSS fetch failed for %s — %s", channel_id, exc)
+        return []
 
 
-# ────────────────────────────────────────────────────────────
-#  Prompt templates
-# ────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+#  Trello duplicate detection
+# ─────────────────────────────────────────────────────────────────────────────
 
-# The system prompt is cached server-side by Anthropic after the first call.
-# This saves ~90% on input tokens for every subsequent call within 5 minutes.
-_SYSTEM_PROMPT = """\
-You are an expert content analyst specialising in YouTube video summarization. \
-Your audience is a content creator who wants to quickly understand what their \
-peers and competitors are publishing so they can identify trends, gaps, and opportunities.
-
-When summarising, follow these rules:
-1. Be concise and factual. Do not add opinions or value judgements.
-2. Organise your output exactly as specified in the user message.
-3. For auto-generated transcripts: the input may lack punctuation or contain \
-filler words — focus on substance, not surface-level errors.
-4. For metadata-only summaries: clearly note the summary is limited and \
-derived from the title and description, not the full video.
-5. Keep the total response under 600 words."""
-
-# Instruct Claude to produce structured Markdown we can parse later
-_USER_PROMPT_TEMPLATE = """\
-Please summarise the following YouTube video.
-
-**Channel:** {channel_name}
-**Title:** {title}
-**Source:** {source_label}
-
-<transcript>
-{transcript_text}
-</transcript>
-
-Produce your summary in exactly this format (use these Markdown headings):
-
-## Overview
-(2–3 sentences covering what the video is about)
-
-## Key Points
-(3–7 bullet points — the most important ideas, findings, or arguments)
-
-## Notable Quotes or Claims
-(1–3 direct quotes or strong claims from the transcript, or "None identified" \
-if the source is metadata-only)
-
-## Takeaways for Content Creators
-(2–4 bullet points: trends observed, topics gaining traction, \
-or gaps a creator could address)
-
-## Tags
-(5–10 single-word or short-phrase topic tags, comma-separated)
-"""
-
-# Source labels passed to the prompt so Claude knows what it's working with
-_SOURCE_LABELS = {
-    1: "Full transcript (manual captions)",
-    2: "Full transcript (auto-generated via Whisper)",
-    3: "⚠️ Metadata only (title + description) — transcript unavailable",
-}
-
-
-# ────────────────────────────────────────────────────────────
-#  Result dataclass
-# ────────────────────────────────────────────────────────────
-
-@dataclass
-class SummaryResult:
-    text: str
-    tokens_input: int
-    tokens_output: int
-
-    @property
-    def estimated_cost_usd(self) -> float:
-        """
-        Approximate cost in USD using claude-sonnet-4-5 pricing.
-        Input: $3.00 / 1M tokens
-        Output: $15.00 / 1M tokens
-        NOTE: Prompt caching reduces effective input cost significantly.
-        """
-        return (self.tokens_input / 1_000_000 * 3.00) + \
-               (self.tokens_output / 1_000_000 * 15.00)
-
-
-# ────────────────────────────────────────────────────────────
-#  Real-time summarization
-# ────────────────────────────────────────────────────────────
-
-def summarize(
-    video_id: str,
-    channel_name: str,
-    title: str,
-    transcript: TranscriptResult,
-) -> SummaryResult:
+def _get_trello_video_ids(backend) -> Set[str]:
     """
-    Call the Claude API synchronously and return a SummaryResult.
-    Uses prompt caching on the system prompt.
+    Return the set of YouTube video IDs already present anywhere on the
+    Trello board (active + archived lists/cards; excludes deleted cards).
 
-    Raises:
-        anthropic.APIError: On API-level failures (already has built-in
-            exponential backoff retries for rate limits in the SDK).
+    Falls back to an empty set if the backend isn't Trello or the call fails,
+    so seeding still works — it'll just risk duplicates in edge cases.
     """
-    if config.BATCH_API_ENABLED:
-        logger.warning(
-            "BATCH_API_ENABLED=True but batch mode is not yet implemented for "
-            "real-time calling. Falling back to synchronous summarization."
-        )
+    try:
+        return backend.get_existing_video_ids()
+    except AttributeError:
+        logger.debug("Seeder: backend has no get_existing_video_ids(); skipping Trello dedup")
+        return set()
+    except Exception as exc:
+        logger.warning("Seeder: could not fetch existing Trello cards — %s", exc)
+        return set()
 
-    client = _get_client()
 
-    source_label = _SOURCE_LABELS.get(transcript.tier, f"Tier {transcript.tier}")
-    user_prompt = _USER_PROMPT_TEMPLATE.format(
-        channel_name=channel_name,
-        title=title,
-        source_label=source_label,
-        transcript_text=transcript.text,
-    )
+# ─────────────────────────────────────────────────────────────────────────────
+#  Core seed routine
+# ─────────────────────────────────────────────────────────────────────────────
 
-    logger.debug(
-        "Calling Claude for %s (tier=%d, chars=%d)",
-        video_id, transcript.tier, len(transcript.text)
-    )
-
-    response = client.messages.create(
-        model=config.CLAUDE_MODEL,
-        max_tokens=config.SUMMARY_MAX_TOKENS,
-        system=[
-            {
-                "type": "text",
-                "text": _SYSTEM_PROMPT,
-                # Prompt caching: Anthropic caches this block server-side.
-                # Cached reads cost 0.1x the base input price.
-                # The cache TTL is 5 minutes; resets on each API call.
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        messages=[
-            {"role": "user", "content": user_prompt}
-        ],
-    )
-
-    summary_text = response.content[0].text
-    usage = response.usage
-
-    result = SummaryResult(
-        text=summary_text,
-        tokens_input=usage.input_tokens,
-        tokens_output=usage.output_tokens,
-    )
+def run_seed(backend) -> None:
+    """
+    Called once at startup.  For every configured channel, fetch the
+    SEED_DEPTH most recent videos and create a Trello card for any that
+    aren't already on the board (active or archived).
+    """
+    if not config.CHANNELS:
+        logger.info("Seeder: no channels configured — skipping")
+        return
 
     logger.info(
-        "Summary done for %s — %d in / %d out tokens (~$%.4f)",
-        video_id,
-        result.tokens_input,
-        result.tokens_output,
-        result.estimated_cost_usd,
+        "Seeder: scanning %d channel(s) for up to %d recent video(s) each …",
+        len(config.CHANNELS),
+        SEED_DEPTH,
     )
 
-    return result
+    # Duplicate guard is Trello-only: a DB record does not mean a card exists.
+    # (Videos may be in the DB from a previous run where the card was later
+    # deleted, or from a run where card creation failed after DB write.)
+    trello_ids: Set[str] = _get_trello_video_ids(backend)
+    logger.debug("Seeder: %d video ID(s) already on Trello board", len(trello_ids))
 
+    # Track what we process this run to avoid intra-run duplicates
+    seen_this_run: Set[str] = set()
 
-# ────────────────────────────────────────────────────────────
-#  Batch API stub (BATCH_API_ENABLED=True activates this path)
-# ────────────────────────────────────────────────────────────
+    seeded = 0
+    skipped = 0
 
-def submit_batch_request(
-    video_id: str,
-    channel_name: str,
-    title: str,
-    transcript: TranscriptResult,
-) -> str:
-    """
-    Submit a single request to Anthropic's Message Batches API.
-    Returns a batch_request_id that can be polled later.
+    for channel_id, channel_name in config.CHANNELS.items():
+        entries = _fetch_recent_entries(channel_id, SEED_DEPTH)
+        logger.debug(
+            "Seeder: %s — %d RSS entry(ies) fetched", channel_name, len(entries)
+        )
 
-    ⚠️  NOT YET IMPLEMENTED — placeholder for future development.
-    See: https://docs.anthropic.com/en/docs/build-with-claude/message-batches
+        for entry in entries:
+            video_id = entry["video_id"]
 
-    When implemented, this function will:
-    1. Accumulate requests across multiple videos in one run.
-    2. Submit them as a single batch (50% cheaper, <24hr turnaround).
-    3. A separate poll_batch_results() job will retrieve and store them.
-    """
-    raise NotImplementedError(
-        "Batch API support is not yet implemented. "
-        "Set BATCH_API_ENABLED=False in config.py to use real-time summarization."
+            if video_id in trello_ids or video_id in seen_this_run:
+                logger.debug(
+                    "Seeder: skipping %s (%s) — card already exists on Trello",
+                    video_id,
+                    entry["title"],
+                )
+                skipped += 1
+                continue
+
+            logger.info(
+                "Seeder: processing %s — %s [%s]",
+                channel_name,
+                entry["title"],
+                video_id,
+            )
+
+            try:
+                _process_seed_entry(entry, channel_name, backend)
+                seen_this_run.add(video_id)
+                seeded += 1
+            except Exception as exc:
+                logger.error(
+                    "Seeder: failed to process %s (%s) — %s",
+                    video_id,
+                    entry["title"],
+                    exc,
+                    exc_info=True,
+                )
+
+            # Small courtesy delay between API calls
+            time.sleep(1)
+
+    logger.info(
+        "Seeder: complete — %d video(s) seeded, %d skipped (card already on Trello)",
+        seeded,
+        skipped,
     )
 
 
-def poll_batch_results() -> None:
-    """
-    Check pending Anthropic batch jobs and store results.
+def _process_seed_entry(entry: dict, channel_name: str, backend) -> None:
+    """Fetch transcript → summarize → publish → record in DB."""
+    video_id = entry["video_id"]
 
-    ⚠️  NOT YET IMPLEMENTED — placeholder for future development.
-    """
-    raise NotImplementedError("Batch API polling is not yet implemented.")
+    # 1. Transcript (3-tier fallback — same as normal poll pipeline)
+    # Returns a TranscriptResult dataclass, not a dict
+    transcript = transcripts.get_transcript(video_id, entry["title"])
+
+    # 2. Summarize — kwarg is `transcript`, value is the TranscriptResult object
+    summary_result = summarizer.summarize(
+        video_id=video_id,
+        title=entry["title"],
+        channel_name=channel_name,
+        transcript=transcript,
+    )
+
+    # 3. Publish to output backend — .tier is an int attribute, .text via summary_result
+    backend.publish(
+        video_id=video_id,
+        title=entry["title"],
+        channel_name=channel_name,
+        url=entry["url"],
+        summary=summary_result.text,
+        transcript_tier=transcript.tier,
+    )
+
+    # 4. Record in local DB so the polling loop never re-processes it
+    database.mark_video_seen(
+        video_id=video_id,
+        channel_id=entry["channel_id"],
+        channel_name=channel_name,
+        title=entry["title"],
+        url=entry["url"],
+        summary=summary_result.text,
+        transcript_tier=transcript.tier,
+    )

@@ -1,9 +1,16 @@
 """
-output/trello_backend.py  ← REPLACE your existing file with this version
+output/trello_backend.py
 ─────────────────────────────────────────────────────────────────────────────
-Changes vs original:
-  • Added get_existing_video_ids() used by seeder.py for board-wide dedup
-  • Everything else is unchanged
+Changes vs previous version:
+  • get_existing_video_ids() now uses filter=all so archived cards are
+    included in the duplicate check.  Hard-deleted cards are never returned
+    by the Trello API regardless of filter, so they will be re-created by
+    the seeder — which is the desired behaviour.
+
+Duplicate behaviour summary:
+  active card   → returned by filter=all → seeder skips it  (no duplicate)
+  archived card → returned by filter=all → seeder skips it  (no duplicate)
+  deleted card  → absent from API        → seeder creates it ✓
 """
 
 import logging
@@ -68,11 +75,16 @@ class TrelloBackend:
     def get_existing_video_ids(self) -> set[str]:
         """
         Return the set of YouTube video IDs referenced by ANY card on the
-        board (across all lists).
+        board that still exists — active or archived.
+
+        Cards that were hard-deleted are absent from the Trello API entirely
+        (regardless of filter), so they will NOT appear in this set, allowing
+        the seeder to re-create them.
 
         Strategy:
           1. GET /lists/{list_id} to discover the board ID.
-          2. GET /boards/{board_id}/cards?fields=name,desc to fetch every card.
+          2. GET /boards/{board_id}/cards?filter=all to fetch every card
+             (active + archived; excludes deleted).
           3. Extract 11-char video IDs from YouTube URLs in name + desc.
         """
         # Step 1 — get the board ID from the configured list
@@ -80,8 +92,15 @@ class TrelloBackend:
         board_id = list_data["idBoard"]
 
         # Step 2 — fetch all cards on the board (lightweight fields only)
+        # filter=all  → includes active cards AND archived (closed=true) cards
+        #               but NOT hard-deleted cards (absent from the API entirely)
+        # This means:
+        #   active card   → found → skip (no duplicate)
+        #   archived card → found → skip (no duplicate)
+        #   deleted card  → not found → seed/create (desired behaviour)
         cards = self._get(
             f"boards/{board_id}/cards",
+            filter="all",
             fields="name,desc",
         )
 
@@ -93,7 +112,8 @@ class TrelloBackend:
                     video_ids.add(match.group(1))
 
         logger.debug(
-            "Trello dedup: found %d video ID(s) across %d card(s) on board %s",
+            "Trello dedup: found %d video ID(s) across %d card(s) on board %s "
+            "(active + archived, excludes deleted)",
             len(video_ids),
             len(cards),
             board_id,
