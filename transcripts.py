@@ -124,11 +124,6 @@ def _fetch_via_api(
     max_retries: int,
     backoff_base: float,
 ) -> list[dict] | None:
-    """
-    Attempt to fetch captions via youtube-transcript-api.
-    Rotates proxies on transient failures with exponential backoff + jitter.
-    Returns raw segment list on success, None on permanent failure.
-    """
     last_exception = None
     attempted_proxies: set[str] = set()
 
@@ -136,25 +131,21 @@ def _fetch_via_api(
         proxy_dict = _pick_proxy(attempted_proxies)
 
         try:
-            segments = YouTubeTranscriptApi.get_transcript(
-                video_id,
-                languages=languages,
-                proxies=proxy_dict,
-            )
+            ytt = YouTubeTranscriptApi(proxies=proxy_dict)  # new: instantiate with proxies
+            fetched = ytt.fetch(video_id, languages=languages)  # new: instance method
+            segments = fetched.to_raw_data()  # convert FetchedTranscript → list[dict]
+
             if attempt > 0:
-                logger.info(
-                    "[%s] Transcript fetched successfully on attempt %d.",
-                    video_id, attempt + 1,
-                )
+                logger.info("[%s] Transcript fetched successfully on attempt %d.", video_id, attempt + 1)
             return segments
 
         except (TranscriptsDisabled, NoTranscriptFound):
             logger.warning("[%s] No transcript available (disabled or not found).", video_id)
-            return None  # permanent — no point retrying
+            return None
 
         except VideoUnavailable:
             logger.warning("[%s] Video is unavailable.", video_id)
-            return None  # permanent
+            return None
 
         except Exception as exc:
             last_exception = exc
