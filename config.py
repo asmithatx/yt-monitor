@@ -34,8 +34,7 @@ YOUTUBE_API_ENABLED: bool = False
 PROXY_ENABLED: bool = True
 
 WEBSHARE_DOWNLOAD_URL = (
-    "https://proxy.webshare.io/api/v2/proxy/list/download/"
-    "rcsmiqesnyquitafnvvifcwhvhblzeoxtnjkpnfv/-/any/username/direct/-/?plan_id=12819807"
+    "https://proxy.webshare.io/api/v2/proxy/list/download/odbdymjebxixtxeoamqgdafxxespfhdtbujtijku/-/any/username/direct/-/?plan_id=12819807"
 )
 
 # Set True to use Anthropic's Message Batches API instead of real-time
