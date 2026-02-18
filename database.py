@@ -318,7 +318,6 @@ def mark_video_seen(
     channel_id: str,
     channel_name: str,
     title: str,
-    url: str,
     summary: str,
     transcript_tier: int = 3,
 ) -> None:
@@ -331,15 +330,15 @@ def mark_video_seen(
         conn.execute(
             """
             INSERT OR IGNORE INTO videos
-                (video_id, channel_id, channel_name, title, url,
+                (video_id, channel_id, channel_name, title,
                  transcript_tier, summary_status, summary_text,
                  output_status, created_at, updated_at)
             VALUES
-                (?, ?, ?, ?, ?,
+                (?, ?, ?, ?,
                  ?, 'done', ?,
                  'done', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
-            (video_id, channel_id, channel_name, title, url,
+            (video_id, channel_id, channel_name, title,
              transcript_tier, summary),
         )
     logger.debug("Seeder: recorded %s in database", video_id)

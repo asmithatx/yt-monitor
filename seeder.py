@@ -207,7 +207,6 @@ def _process_seed_entry(entry: dict, channel_name: str, backend) -> None:
         channel_id=entry["channel_id"],
         channel_name=channel_name,
         title=entry["title"],
-        url=entry["url"],
         summary=summary_result.text,
         transcript_tier=transcript.tier,
     )
