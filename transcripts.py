@@ -21,7 +21,8 @@ from youtube_transcript_api import (
     NoTranscriptFound,
     TranscriptsDisabled,
     VideoUnavailable,
-    VideoUnplayable,      # ← add this line
+    VideoUnplayable,
+    AgeRestricted,
     YouTubeTranscriptApi,
 )
 
@@ -105,7 +106,7 @@ def _fetch_via_api(
                 )
             return fetched.to_raw_data()
 
-        except (TranscriptsDisabled, NoTranscriptFound, VideoUnplayable):  # ← add VideoUnplayable
+        except (TranscriptsDisabled, NoTranscriptFound, VideoUnplayable, AgeRestricted):
             logger.warning("[%s] No transcript available (disabled or not found).", video_id)
             return None  # permanent — no point retrying
 
