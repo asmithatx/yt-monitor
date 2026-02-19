@@ -21,6 +21,7 @@ import time
 import config
 import database
 import channels as channel_module
+import transcripts
 from transcripts import init_proxies
 import summarizer
 from output import get_backend
