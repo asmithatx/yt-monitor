@@ -57,19 +57,19 @@ WHISPER_BACKEND: str = "api"
 # ════════════════════════════════════════════════════════════
 
 CHANNELS: dict[str, str] = {
-    "UCnI_h3e6b5jGLfly2SY57SA": "WillNeff",
-    "UCu8ZQtn8-Z7vpT70JmcqsZQ": "SomeOrdinaryGamers",
-    "UCnk1idRUmwhdpy_5Il1unfw": "HopeScope",
-    "UCRtTcZgg9MekxGVTMXy7Epg": "DramaAlert",
-    "UCLqqVNPWOerbt7DvE3Bwnsw": "JuiceboxTV",
-    "UCpLh6CawAd90bJ9tyDBovTg": "TrueGeordie",
+    # these are your peers (and/or competition) that you wish to keep tabs on what/when they post
+    "UC6AbsTfBMQ_dHjtipwh3bZg": "TheFighterAndTheKid",
     "UC5PstSsGrRwj2o6asQpC4Rg": "FlagrantPodcast",
     "UC4cBLozSCjGIgqK5Tl2lFpg": "BertKreischer",
     "UCuT0B27AxYqCPWMJixOOnMQ": "YMHStudios",
-    "UCfPhyExfcaqJBKc3HO3cNBw": "JustKiddingNews",
-    "UCuTQDPUE12sy7g1xf1LAdTA": "NoelMiller",
+    "UC-mP1nlk0qOutA08zuQHORA": "PatrickCc",
+    "UCZ1q3ZqXAFCvym4jrGozdRg": "TheElephantGraveyardMusic",
     "UCBVAaHkKSwfzee79b7SPyPw": "StavvyBaby",
     "UCZOEywSEwg8YZcKMoI5mHgA": "joerogan",
+    "UC3Gnx0jPX0Tdtyyd0vXLnlA": "ApologiaComedia",
+    # including our own channels just to see the AI summaries of them after you post publicly
+    "UCSmxtnPw-aVg_hQ9zLb_Fug": "PodcastCringe",
+    "UC2LQV-LPJ4UAOjGcLb668pA": "MoreCringe",
 }
 
 
