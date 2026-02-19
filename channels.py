@@ -50,6 +50,31 @@ class VideoEntry:
 
 
 # ────────────────────────────────────────────────────────────
+#  Proxy helpers
+# ────────────────────────────────────────────────────────────
+
+def _get_proxies() -> Optional[dict]:
+    """
+    Return a requests-compatible proxies dict if proxy is configured,
+    otherwise None. Tries to reuse the same WebshareProxyConfig that
+    transcripts.py uses; falls back to raw config values if unavailable.
+    """
+    try:
+        from transcripts import WebshareProxyConfig
+        cfg = WebshareProxyConfig()
+        return cfg.as_requests_proxies()
+    except Exception:
+        pass
+
+    # Fallback: build from raw config if present
+    proxy_url = getattr(config, "PROXY_URL", None)
+    if proxy_url:
+        return {"http": proxy_url, "https": proxy_url}
+
+    return None
+
+
+# ────────────────────────────────────────────────────────────
 #  RSS feed polling
 # ────────────────────────────────────────────────────────────
 
@@ -86,16 +111,42 @@ def fetch_new_videos_from_rss(channel_id: str, channel_name: str) -> list[VideoE
     url = _RSS_URL.format(channel_id=channel_id)
     logger.debug("Fetching RSS for %s (%s)", channel_name, channel_id)
 
+    # ── Fetch raw response via requests so we can inspect it on parse errors ──
     try:
-        feed = feedparser.parse(url)
+        proxies = _get_proxies()
+        response = requests.get(url, proxies=proxies, timeout=15)
+        raw_text = response.text
+        logger.debug(
+            "RSS raw [%s]: status=%s ct=%s",
+            channel_name, response.status_code,
+            response.headers.get("content-type", "unknown"),
+        )
+    except requests.RequestException as exc:
+        logger.error("RSS fetch error for %s: %s", channel_name, exc)
+        database.increment_channel_error(channel_id)
+        return []
+
+    # ── Parse from the response text (not the URL) so feedparser sees what
+    #    we already fetched rather than making its own unproxied request ──
+    try:
+        feed = feedparser.parse(raw_text)
     except Exception as exc:
         logger.error("RSS parse error for %s: %s", channel_name, exc)
         database.increment_channel_error(channel_id)
         return []
 
     if feed.bozo and feed.bozo_exception:
-        # feedparser sets bozo=True for malformed XML; log but don't abort
-        logger.warning("Bozo feed for %s: %s", channel_name, feed.bozo_exception)
+        # feedparser sets bozo=True for malformed XML.
+        # Log the raw response preview so we can see what YouTube actually sent
+        # (e.g. an HTML error page, a consent wall, a rate-limit response).
+        logger.warning(
+            "Bozo feed for %s: %s | HTTP %s | content-type: %s | raw preview: %r",
+            channel_name,
+            feed.bozo_exception,
+            response.status_code,
+            response.headers.get("content-type", "unknown"),
+            raw_text[:500],
+        )
 
     new_videos: list[VideoEntry] = []
 
