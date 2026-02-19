@@ -92,7 +92,12 @@ def fetch_new_videos_from_rss(channel_id: str, channel_name: str) -> list[VideoE
     #    user-agent spoofing) gets blocked with 404s. The seeder uses the
     #    same approach and works reliably.
     try:
-        feed = feedparser.parse(url)
+        feed = feedparser.parse(
+            url,
+            request_headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            },
+        )
     except Exception as exc:
         logger.error("RSS parse error for %s: %s", channel_name, exc)
         database.increment_channel_error(channel_id)

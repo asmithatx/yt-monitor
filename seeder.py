@@ -53,7 +53,12 @@ def _fetch_recent_entries(channel_id: str, depth: int = SEED_DEPTH) -> list[dict
     """Return up to *depth* most-recent RSS entries for *channel_id*."""
     url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
     try:
-        feed = feedparser.parse(url)
+        feed = feedparser.parse(
+            url,
+            request_headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            },
+        )
         entries = feed.entries[:depth]
         result = []
         for entry in entries:
