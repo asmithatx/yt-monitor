@@ -86,55 +86,33 @@ def fetch_new_videos_from_rss(channel_id: str, channel_name: str) -> list[VideoE
     url = _RSS_URL.format(channel_id=channel_id)
     logger.debug("Fetching RSS for %s (%s)", channel_name, channel_id)
 
-    # ── Fetch raw response via requests so we can inspect it on parse errors.
-    #    RSS feeds are fetched directly (no proxy) — the proxy is only needed
-    #    for transcript extraction. Routing RSS through residential proxies
-    #    causes YouTube to return 404/500 errors on the feeds endpoint.
-    #    A browser-like User-Agent is required; YouTube rejects the default
-    #    Python/urllib agent with 404s.
-    _rss_headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-    }
+    # ── Let feedparser fetch the URL directly using its own HTTP client.
+    #    This is intentional: feedparser's urllib-based fetching is accepted
+    #    by YouTube's RSS endpoint, whereas requests (even with browser
+    #    user-agent spoofing) gets blocked with 404s. The seeder uses the
+    #    same approach and works reliably.
     try:
-        response = requests.get(url, headers=_rss_headers, timeout=15)
-        raw_text = response.text
-        logger.debug(
-            "RSS raw [%s]: status=%s ct=%s",
-            channel_name, response.status_code,
-            response.headers.get("content-type", "unknown"),
-        )
-    except requests.RequestException as exc:
-        logger.error("RSS fetch error for %s: %s", channel_name, exc)
-        database.increment_channel_error(channel_id)
-        return []
-
-    # ── Parse from the response text (not the URL) so feedparser sees what
-    #    we already fetched rather than making its own unproxied request ──
-    try:
-        feed = feedparser.parse(raw_text)
+        feed = feedparser.parse(url)
     except Exception as exc:
         logger.error("RSS parse error for %s: %s", channel_name, exc)
         database.increment_channel_error(channel_id)
         return []
 
+    http_status = getattr(feed, "status", None)
+
     if feed.bozo and feed.bozo_exception:
-        # feedparser sets bozo=True for malformed XML.
-        # Log the raw response preview so we can see what YouTube actually sent
-        # (e.g. an HTML error page, a consent wall, a rate-limit response).
+        # feedparser sets bozo=True for malformed XML — usually means YouTube
+        # returned an error page instead of a feed. Log the HTTP status for
+        # diagnosis. If it's a 4xx/5xx we bail out early.
         logger.warning(
-            "Bozo feed for %s: %s | HTTP %s | content-type: %s | raw preview: %r",
+            "Bozo feed for %s: %s | HTTP %s",
             channel_name,
             feed.bozo_exception,
-            response.status_code,
-            response.headers.get("content-type", "unknown"),
-            raw_text[:500],
+            http_status,
         )
+        if http_status and http_status >= 400:
+            database.increment_channel_error(channel_id)
+            return []
 
     new_videos: list[VideoEntry] = []
 
