@@ -33,9 +33,6 @@ YOUTUBE_API_ENABLED: bool = False
 # and PROXY_PASSWORD in .env. Has no effect when False.
 PROXY_ENABLED: bool = True
 
-PROXY_USERNAME = os.getenv("PROXY_USERNAME", "")
-PROXY_PASSWORD = os.getenv("PROXY_PASSWORD", "")
-
 # Set True to use Anthropic's Message Batches API instead of real-time
 # calls. Gives a 50% cost discount; results arrive within 24 hours.
 # Not suitable if you want summaries immediately. Has no effect when False.
@@ -60,23 +57,19 @@ WHISPER_BACKEND: str = "api"
 # ════════════════════════════════════════════════════════════
 
 CHANNELS: dict[str, str] = {
-    # "UCxxxxxxxxxxxxxxxxxxxxxxxx": "Friendly Channel Name",
-    # Example (replace with real channels):
-    # "UCBcRF18a7Qf58cCRy5xuWwQ": "Michael Reeves",
-    # "UCv9ztg_Qfj6_kmtWoFWyHYw": "@oleJackBurton (Andrew Smith's YT channel for testing)",
-    "UCFsDMlkYLpTVt9-cqmZxqZg": "https://www.youtube.com/@WillNeff",
-    "UCtMVHI3AJD4Qk4hcbZnI9ZQ": "https://www.youtube.com/@SomeOrdinaryGamers",
-    "UCAM2fyCjEdROyELretVTiiw": "https://www.youtube.com/@HopeScope",
-    "UC11PvrGPzo6Y7Zc6-e9cAKg": "https://www.youtube.com/@DramaAlert",
-    "UCidqz0TKGCpdBO7VcLNEhKA": "https://www.youtube.com/@JuiceboxTV",
-    "UCWaZLW7Bfa83J_h587dH1WQ": "https://www.youtube.com/@TrueGeordie",
-    "UCvYrhzKs1c8LajTP687ifEA": "https://www.youtube.com/@FlagrantPodcast",
-    "UCz_sgiKcwX6V52KPn_B6PxQ": "https://www.youtube.com/@BertKreischer",
-    "UCYIgiXwJck_Pb5Nj-wIrsqg": "https://www.youtube.com/@YMHStudios",
-    "UCfPhyExfcaqJBKc3HO3cNBw": "https://www.youtube.com/@JustKiddingNews",
-    "UCcksY7M9z-G8ek6eblXMxdw": "https://www.youtube.com/@NoelMiller",
-    "UC7bouvhSTd2RQwYOi7zq0hQ": "https://www.youtube.com/@StavvyBaby",
-    "UCzQUP1qoWDoEbmsQxvdjxgQ": "https://www.youtube.com/@joerogan",
+    "UCnI_h3e6b5jGLfly2SY57SA": "WillNeff",
+    "UCu8ZQtn8-Z7vpT70JmcqsZQ": "SomeOrdinaryGamers",
+    "UCnk1idRUmwhdpy_5Il1unfw": "HopeScope",
+    "UCRtTcZgg9MekxGVTMXy7Epg": "DramaAlert",
+    "UCLqqVNPWOerbt7DvE3Bwnsw": "JuiceboxTV",
+    "UCpLh6CawAd90bJ9tyDBovTg": "TrueGeordie",
+    "UC5PstSsGrRwj2o6asQpC4Rg": "FlagrantPodcast",
+    "UC4cBLozSCjGIgqK5Tl2lFpg": "BertKreischer",
+    "UCuT0B27AxYqCPWMJixOOnMQ": "YMHStudios",
+    "UCfPhyExfcaqJBKc3HO3cNBw": "JustKiddingNews",
+    "UCuTQDPUE12sy7g1xf1LAdTA": "NoelMiller",
+    "UCBVAaHkKSwfzee79b7SPyPw": "StavvyBaby",
+    "UCZOEywSEwg8YZcKMoI5mHgA": "joerogan",
 }
 
 
