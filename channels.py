@@ -50,31 +50,6 @@ class VideoEntry:
 
 
 # ────────────────────────────────────────────────────────────
-#  Proxy helpers
-# ────────────────────────────────────────────────────────────
-
-def _get_proxies() -> Optional[dict]:
-    """
-    Return a requests-compatible proxies dict if proxy is configured,
-    otherwise None. Tries to reuse the same WebshareProxyConfig that
-    transcripts.py uses; falls back to raw config values if unavailable.
-    """
-    try:
-        from transcripts import WebshareProxyConfig
-        cfg = WebshareProxyConfig()
-        return cfg.as_requests_proxies()
-    except Exception:
-        pass
-
-    # Fallback: build from raw config if present
-    proxy_url = getattr(config, "PROXY_URL", None)
-    if proxy_url:
-        return {"http": proxy_url, "https": proxy_url}
-
-    return None
-
-
-# ────────────────────────────────────────────────────────────
 #  RSS feed polling
 # ────────────────────────────────────────────────────────────
 
@@ -111,10 +86,12 @@ def fetch_new_videos_from_rss(channel_id: str, channel_name: str) -> list[VideoE
     url = _RSS_URL.format(channel_id=channel_id)
     logger.debug("Fetching RSS for %s (%s)", channel_name, channel_id)
 
-    # ── Fetch raw response via requests so we can inspect it on parse errors ──
+    # ── Fetch raw response via requests so we can inspect it on parse errors.
+    #    RSS feeds are fetched directly (no proxy) — the proxy is only needed
+    #    for transcript extraction. Routing RSS through residential proxies
+    #    causes YouTube to return 404/500 errors on the feeds endpoint.
     try:
-        proxies = _get_proxies()
-        response = requests.get(url, proxies=proxies, timeout=15)
+        response = requests.get(url, timeout=15)
         raw_text = response.text
         logger.debug(
             "RSS raw [%s]: status=%s ct=%s",
