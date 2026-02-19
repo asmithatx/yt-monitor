@@ -21,8 +21,10 @@ from youtube_transcript_api import (
     NoTranscriptFound,
     TranscriptsDisabled,
     VideoUnavailable,
+    VideoUnplayable,      # ← add this line
     YouTubeTranscriptApi,
 )
+
 from youtube_transcript_api.proxies import WebshareProxyConfig
 
 import config
@@ -103,7 +105,7 @@ def _fetch_via_api(
                 )
             return fetched.to_raw_data()
 
-        except (TranscriptsDisabled, NoTranscriptFound):
+        except (TranscriptsDisabled, NoTranscriptFound, VideoUnplayable):  # ← add VideoUnplayable
             logger.warning("[%s] No transcript available (disabled or not found).", video_id)
             return None  # permanent — no point retrying
 
