@@ -122,22 +122,23 @@ class TrelloBackend:
 
     # ── Card creation ────────────────────────────────────────────────────────
 
-    def publish(
-        self,
-        *,
-        video_id: str,
-        title: str,
-        channel_name: str,
-        url: str,
-        summary: str,
-        transcript_tier: str = "unknown",
-    ) -> None:
-        """Create a Trello card for the given video summary."""
+    def publish(self, video=None, *, video_id=None, title=None, channel_name=None,
+                url=None, summary=None, transcript_tier="unknown") -> str:
+        """Create a Trello card — accepts either a sqlite3.Row or keyword args."""
+        if video is not None:
+            # Called from monitor.py with a database Row
+            video_id = video["video_id"]
+            title = video["title"]
+            channel_name = video["channel_name"]
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            summary = video["summary_text"] or ""
+            transcript_tier = str(video["transcript_tier"] or "unknown")
+
         card_name = f"[{channel_name}] {title}"
         desc = self._format_description(
             url=url,
             summary=summary,
-            transcript_tier=transcript_tier,
+            transcript_tier=str(transcript_tier),
         )
 
         card = self._post(
@@ -147,11 +148,8 @@ class TrelloBackend:
             desc=desc,
             urlSource=url,
         )
-        logger.info(
-            "Trello: card created for %s — %s",
-            video_id,
-            card.get("shortUrl", ""),
-        )
+        logger.info("Trello: card created for %s — %s", video_id, card.get("shortUrl", ""))
+        return card.get("id", "")
 
     @staticmethod
     def _format_description(*, url: str, summary: str, transcript_tier: str) -> str:
