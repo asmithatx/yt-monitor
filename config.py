@@ -71,7 +71,7 @@ CHANNELS: dict[str, str] = {
     "UCidqz0TKGCpdBO7VcLNEhKA": "https://www.youtube.com/@JuiceboxTV",
     "UCWaZLW7Bfa83J_h587dH1WQ": "https://www.youtube.com/@TrueGeordie",
     "UCvYrhzKs1c8LajTP687ifEA": "https://www.youtube.com/@FlagrantPodcast",
-    "Ucz_sgiKcwX6V52KPn_B6PxQ": "https://www.youtube.com/@BertKreischer",
+    "UCz_sgiKcwX6V52KPn_B6PxQ": "https://www.youtube.com/@BertKreischer",
     "UCYIgiXwJck_Pb5Nj-wIrsqg": "https://www.youtube.com/@YMHStudios",
     "UCfPhyExfcaqJBKc3HO3cNBw": "https://www.youtube.com/@JustKiddingNews",
     "UCcksY7M9z-G8ek6eblXMxdw": "https://www.youtube.com/@NoelMiller",

@@ -90,8 +90,19 @@ def fetch_new_videos_from_rss(channel_id: str, channel_name: str) -> list[VideoE
     #    RSS feeds are fetched directly (no proxy) — the proxy is only needed
     #    for transcript extraction. Routing RSS through residential proxies
     #    causes YouTube to return 404/500 errors on the feeds endpoint.
+    #    A browser-like User-Agent is required; YouTube rejects the default
+    #    Python/urllib agent with 404s.
+    _rss_headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+    }
     try:
-        response = requests.get(url, timeout=15)
+        response = requests.get(url, headers=_rss_headers, timeout=15)
         raw_text = response.text
         logger.debug(
             "RSS raw [%s]: status=%s ct=%s",
